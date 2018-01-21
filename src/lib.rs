@@ -1,10 +1,12 @@
 #[macro_use]
 extern crate nom;
 
-use std::fmt;
+mod csi;
+pub use csi::CSI;
 
 mod parser;
-use parser::{text_with_csi, Token};
+use parser::Token;
+pub use parser::text_with_csi;
 
 #[derive(Debug, PartialEq)]
 pub enum Value {
@@ -12,9 +14,13 @@ pub enum Value {
     CSI(CSI),
 }
 
-#[derive(Debug, PartialEq)]
-pub enum CSI {
-    Unknown(String),
+impl<'a> From<Token<'a>> for Value {
+    fn from(token: Token<'a>) -> Value {
+        match token {
+            Token::CSI(_, _, _) => Value::CSI(CSI::from(token)),
+            Token::Text(bytes) => Value::Text(String::from_utf8_lossy(bytes).into_owned()),
+        }
+    }
 }
 
 pub fn parse_string(string: &str) -> Result<Vec<Value>, nom::IError> {
@@ -22,41 +28,6 @@ pub fn parse_string(string: &str) -> Result<Vec<Value>, nom::IError> {
     text_with_csi(&bytes)
         .to_full_result()
         .map(|tokens| tokens.into_iter().map(Value::from).collect())
-}
-
-impl<'a> From<Token<'a>> for Value {
-    fn from(token: Token<'a>) -> Value {
-        match token {
-            Token::CSI(parameters, intermediaries, final_byte) => {
-                Value::CSI(CSI::unknown(parameters, intermediaries, final_byte))
-            }
-            Token::Text(bytes) => Value::Text(String::from_utf8_lossy(bytes).into_owned()),
-        }
-    }
-}
-
-impl CSI {
-    fn unknown(parameters: Vec<char>, intermediaries: Vec<char>, final_byte: char) -> CSI {
-        let mut string = String::with_capacity(parameters.len() + intermediaries.len() + 1);
-        for c in parameters.into_iter() {
-            string.push(c);
-        }
-        for c in intermediaries.into_iter() {
-            string.push(c);
-        }
-        string.push(final_byte);
-
-        CSI::Unknown(string)
-    }
-}
-
-impl fmt::Display for CSI {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str("\x1b[")?;
-        match *self {
-            CSI::Unknown(ref s) => f.write_str(s),
-        }
-    }
 }
 
 #[cfg(test)]
